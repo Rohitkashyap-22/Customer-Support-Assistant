@@ -104,8 +104,8 @@ app = workflow.compile()
 # ==========================================
 if __name__ == "__main__":
     print("---- Bank of India Credit Card Support Bot Online ----")
-    print("---- INSTRUCTIONS: If you have any query, u can type your question below.")
-    print("                (If you want to close the system, type 'exit')\n")
+    print("---- INSTRUCTIONS: If you have any query, type your question below.")
+    print("                   If you want to close the system, type 'exit'")
     
     while True:
         # 1. Get User Input with a clear prompt
