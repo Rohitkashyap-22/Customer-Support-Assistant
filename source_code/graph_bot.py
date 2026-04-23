@@ -2,10 +2,11 @@ import os
 from typing import TypedDict
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_chroma import Chroma # Updated to fix the warning!
+from langchain_chroma import Chroma
 from langchain_core.prompts import PromptTemplate
 from langgraph.graph import StateGraph, END
 
+# Load environment variables (API Key)
 load_dotenv()
 
 # ==========================================
@@ -20,22 +21,26 @@ class BotState(TypedDict):
 # 2. DEFINE THE NODES (The Actions)
 # ==========================================
 def rag_node(state: BotState):
-    """Searches the database and tries to answer."""
+    """Searches the database and tries to answer using Gemini."""
     query = state["query"]
-    print(f"\n[Bot] Let me check the documentation for: '{query}'...")
+    print(f"\n[System] Searching knowledge base for: '{query}'...")
     
+    # Initialize Embedding model and Vector DB
     embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
     vector_store = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
     retriever = vector_store.as_retriever(search_kwargs={"k": 3})
     
+    # Retrieve relevant chunks from the PDF
     retrieved_docs = retriever.invoke(query)
     context = "\n\n".join([doc.page_content for doc in retrieved_docs])
     
+    # Initialize the LLM
     llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
     
-    # If the bot doesn't know, we force it to output the exact word "ESCALATE"
+    # Strict System Prompt to prevent hallucination
     prompt_template = """
-    You are a customer support bot. Use ONLY the following context to answer. 
+    You are a customer support bot for Bank of India Credit Cards. 
+    Use ONLY the following context to answer. 
     If the context does not contain the answer, reply EXACTLY with the word: ESCALATE. Do not guess.
     
     Context:
@@ -48,6 +53,7 @@ def rag_node(state: BotState):
     prompt = PromptTemplate.from_template(prompt_template)
     chain = prompt | llm
     
+    # Get response from Gemini
     response = chain.invoke({"context": context, "question": query}).content.strip()
     
     # Check if we need to escalate to a human
@@ -57,10 +63,12 @@ def rag_node(state: BotState):
         return {"answer": response, "needs_human": False}
 
 def human_node(state: BotState):
-    """Pauses the system and asks a human for input."""
-    print("\n[System Alert] ⚠️ I don't know the answer. Escalating to Human Agent...")
+    """Pauses the system and asks a human for input (HITL)."""
+    print("\n[System Alert] ⚠️ I don't have this information. Escalating to Human Agent...")
+    
     # This simulates a dashboard where a human agent types a response
-    human_answer = input(f"User asked: '{state['query']}'\nType your manual response here: ")
+    human_answer = input(f"User asked: '{state['query']}'\n[Agent Dashboard] Type your manual response here: ")
+    
     return {"answer": f"[Human Agent] {human_answer}", "needs_human": False}
 
 # ==========================================
@@ -92,19 +100,28 @@ workflow.add_edge("human_node", END)
 app = workflow.compile()
 
 # ==========================================
-# 5. TEST THE WORKFLOW
+# 5. INTERACTIVE CHAT (For Live Video Demo)
 # ==========================================
 if __name__ == "__main__":
-    print("=== 🚀 Customer Support Bot Online ===")
+    print("---- Bank of India Credit Card Support Bot Online ----")
+    print("---- INSTRUCTIONS: If you have any query, u can type your question below.")
+    print("                (If you want to close the system, type 'exit')\n")
     
-    # TEST 1: An in-domain question (Bot should answer automatically)
-    print("\n--- Test 1: Known Query ---")
-    result1 = app.invoke({"query": "What is the main objective of this project?", "answer": "", "needs_human": False})
-    print(f"\nFinal Response Sent to User:\n{result1['answer']}")
-    
-    print("\n" + "="*50)
-    
-    # TEST 2: An out-of-domain question (Should trigger HITL escalation)
-    print("\n--- Test 2: Unknown Query ---")
-    result2 = app.invoke({"query": "What is your company's refund policy?", "answer": "", "needs_human": False})
-    print(f"\nFinal Response Sent to User:\n{result2['answer']}")
+    while True:
+        # 1. Get User Input with a clear prompt
+        user_query = input("\n🧑‍💻 Ask your question (or type 'exit' to stop): ")
+        
+        # 2. Check for Exit command
+        if user_query.lower() == 'exit':
+            print("Shutting down system... Bye! 👋")
+            break
+            
+        # Ignore empty inputs
+        if not user_query.strip():
+            continue
+            
+        # 3. Run the LangGraph workflow
+        result = app.invoke({"query": user_query, "answer": "", "needs_human": False})
+        
+        # 4. Display the final answer (either from Bot or Human)
+        print(f"\n🤖 Bot Response: {result['answer']}")
